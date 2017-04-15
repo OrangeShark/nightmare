@@ -1,4 +1,5 @@
 ;;;; package.lisp
 
 (defpackage #:nightmare
-  (:use #:cl #:xelf))
+  (:use #:cl #:xelf)
+  (:export nightmare))
