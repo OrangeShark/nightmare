@@ -5,8 +5,8 @@
 ;;; "nightmare" goes here. Hacks and glory await!
 (defparameter *width* 640)
 (defparameter *height* 480)
-(defparameter *level-width* (units 40))
-(defparameter *level-height* (units 30))
+(defparameter *level-width* 40)  ;; in units
+(defparameter *level-height* 30) ;; in units
 (defparameter *units* 32)
 (defun units (n) (* *units* n))
 
@@ -16,18 +16,19 @@
   :tile-height 16
   :tile-width 16)
 
-(defun draw-image* (image sx sy swidth sheight dx dy dwidth dheight)
-  (let ((image-width 256)
-        (image-height 256))
+(defun draw-image* (name sx sy swidth sheight dx dy dwidth dheight)
+  (let* ((image (find-resource-object name))
+         (image-width (sdl:width image))
+         (image-height (sdl:height image)))
     (let ((tex-x1 (/ sx image-width))
           (tex-y1 (/ sy image-height))
-          (tex-x2 (/ (+ sx swidth) image-width))
-          (tex-y2 (/ (+ sy sheight) image-height))
+          (tex-x2 (/ (+ sx swidth -1) image-width))
+          (tex-y2 (/ (+ sy sheight -1) image-height))
           (dx2 (+ dx dwidth))
           (dy2 (+ dy dheight)))
       (xelf::enable-texture-blending)
       (set-blending-mode :alpha)
-      (gl:bind-texture :texture-2d (find-texture image))
+      (gl:bind-texture :texture-2d (find-texture name))
       (xelf::set-vertex-color "white")
       (gl:with-primitive :quads
         (gl:tex-coord tex-x1 tex-y1)
@@ -88,18 +89,65 @@
       (insert (make-wall right top (units 1) (- bottom top (units -1))))
       (current-buffer))))
 
+
+(defparameter *tile-units* 16)
+(defun tile-units (n) (* n *tile-units*))
+(defun create-tile-data (id)
+  (multiple-value-bind (y x)
+      (floor id *tile-units*)
+    (list (tile-units x) (tile-units y))))
+
+(defun random-tile ()
+    (random-choose '(112 144 144 145 145 160 160 161 161)))
+
+(defun random-ground-tiles (n acc)
+  (if (<= n 0)
+      acc
+      (random-ground-tiles (- n 1) (cons (random-tile) acc))))
+
+(defparameter *map-data-id* (random-ground-tiles 1200 '()))
+(defparameter *map-data* (map 'vector #'create-tile-data *map-data-id*))
+
+
+
+
 (defclass nightmare (buffer)
   ((player :initform (make-instance 'player))
-   (background-color :initform nil)
-   (width :initform *level-width*)
-   (height :initform *level-height*)))
+   (background-color :initform '(25 23 22))
+   (tile-sheet :initform "cave.png")
+   (map-data :initform *map-data*)
+   (tile-sheet-width :initform 16)
+   (tile-sheet-height :initform 16)
+   (width-unit :initform *level-width*)
+   (height-unit :initform *level-height*)
+   (width :initform (units *level-width*))
+   (height :initform (units *level-height*))))
 
-(defmethod draw :before ((nightmare nightmare))
+(defun draw-tiles (buffer tile-sheet)
+  (with-slots (map-data width-unit) buffer
+    (loop for i from 0
+          while (< i (length map-data))
+          do (let* ((tile (elt map-data i))
+                    (tile-x (first tile))
+                    (tile-y (second tile)))
+               (multiple-value-bind (y x)
+                   (floor i width-unit)
+                 (draw-image* tile-sheet tile-x tile-y
+                              *tile-units* *tile-units*
+                              (units x) (units y)
+                              *units* *units*))))))
+
+(defmethod draw ((nightmare nightmare))
   (with-buffer nightmare
-    (xelf::project-window nightmare)
-    (with-slots (width height) nightmare
-      (draw-box 0 0 width height :color "gray20")
-      (draw-image* "cave.png" 0 144 16 16 (units 4) (units 4) (units 1) (units 1)))))
+    (with-slots (objects width height background-color tile-sheet) nightmare
+      (when background-color
+        (draw-box 0 0 width height :color background-color))
+      (when tile-sheet
+        (draw-tiles nightmare tile-sheet))
+      (if (or (shell-p nightmare)
+              (z-sort-p nightmare))
+          (xelf::draw-object-layer-z-sorted nightmare)
+          (xelf::draw-object-layer nightmare)))))
 
 (defmethod start-game ((nightmare nightmare))
   ;; set up level
