@@ -56,12 +56,18 @@
 
 (defclass monster (node)
   ((direction :initform nil)
+   (heading :initarg :heading :initform :left)
+   (speed :initarg :speed :initform 4)
    (width :initform (units 1))
    (height :initform (units 1))
    (color :initform "green")))
 
 (defmethod update ((monster monster))
-  )
+  (with-slots (heading speed) monster
+    (move monster (direction-heading heading) speed)))
+
+(defmethod collide ((player player) (monster monster))
+  (destroy player))
 
 (defclass wall (node)
   ((color :initform "gray50")))
@@ -70,6 +76,11 @@
   (with-slots (direction) player
     (setf direction (opposite-direction direction))
     (move player (direction-heading direction) (* *player-speed* 2))))
+
+(defmethod collide ((monster monster) (wall wall))
+  (with-slots (heading speed) monster
+    (setf heading (opposite-direction heading))
+    (move monster (direction-heading heading) speed)))
 
 (defun make-wall (x y width height)
   (let ((wall (make-instance 'wall)))
@@ -113,6 +124,7 @@
 
 (defclass nightmare (buffer)
   ((player :initform (make-instance 'player))
+   (monsters :initform '())
    (background-color :initform '(25 23 22))
    (tile-sheet :initform "cave.png")
    (map-data :initform *map-data*)
@@ -149,15 +161,37 @@
           (xelf::draw-object-layer-z-sorted nightmare)
           (xelf::draw-object-layer nightmare)))))
 
-(defmethod start-game ((nightmare nightmare))
+(defmethod start-game ()
   ;; set up level
-  (with-slots (player) nightmare
-    (with-buffer nightmare
-      (insert player)
-      (move-to player 110 200)
-      (follow-with-camera nightmare player)
-     ; (paste-from nightmare (make-border 0 0 (- *level-width* (units 1)) (- *level-height* (units 1))))
-      )))
+  (let ((nightmare (make-instance 'nightmare)))
+    (switch-to-buffer nightmare)
+    (let ((monster1 (make-instance 'monster))
+          (monster2 (make-instance 'monster :heading :upleft))
+          (monster3 (make-instance 'monster :heading :down)))
+      (with-slots (player monsters) nightmare
+        (push monster1 monsters)
+        (push monster2 monsters)
+        (push monster3 monsters)
+        (with-buffer nightmare
+          (insert player)
+          (move-to player 110 200)
+          (follow-with-camera nightmare player)
+          (insert monster1)
+          (move-to monster1 (units 4) (units 4))
+          (insert monster2)
+          (move-to monster2 (units 35) (units 24))
+          (insert monster3)
+          (move-to monster3 (units 15) (units 7))
+          (paste-from nightmare (make-border 0 0 (units (- *level-width* 1)) (units (- *level-height* 1)))))))))
+
+(defmethod update :after ((nightmare nightmare))
+  (when (keyboard-down-p :pagedown)
+    (at-next-update (reset-game nightmare))))
+
+(defun reset-game (nightmare)
+  (stop nightmare)
+  (start-game)
+  (at-next-update (destory nightmare) ))
 
 (defparameter *title-string* "nightmare")
 
@@ -170,6 +204,4 @@
     (open-project :nightmare)
     (index-all-images)
     (index-pending-resources)
-    (let ((nightmare (make-instance 'nightmare)))
-      (switch-to-buffer nightmare)
-      (start-game nightmare))))
+    (start-game)))
